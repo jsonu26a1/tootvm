@@ -1,21 +1,24 @@
 fn main() {
     println!("Hello, world!");
+    let ts = stage1(b"5 + 6").unwrap();
+    println!("{:?}", ts);
 }
 
-struct TokenStream {
+#[derive(Debug)]
+pub struct TokenStream {
     pub tokens: Vec<TokenItem>,
-    pub cursor: usize,
 }
 
+#[derive(Debug)]
 pub struct TokenItem {
     pub token: Token,
     pub start: usize,
-    pub length: usize,
+    pub len: usize,
 }
 
+#[derive(Debug)]
 pub enum Token {
     LineFeed,
-    Space,
     Exclaimation,
     Hash,
     Dollar,
@@ -58,6 +61,20 @@ pub enum Token {
     BlockComment,
 
     Unknown,
+}
+
+#[derive(Debug)]
+pub struct TokenError {
+    pub partial_stream: TokenStream,
+    pub error_kind: TokenErrorKind,
+    pub loc: usize,
+}
+
+#[derive(Debug)]
+pub enum TokenErrorKind {
+    UnknownToken(u8),
+    UnclosedString,
+    UnclosedComment,
 }
 
 static LINEFEED: u8 = 0x0A;
@@ -119,37 +136,45 @@ fn is_identifier(c: u8) -> bool {
 }
 
 // TODO bounds checks
-fn stage1(source: &[u8]) -> TokenStream {
-    let mut ts = TokenStream { tokens: vec![], cursor: 0 };
+fn stage1(source: &[u8]) -> Result<TokenStream, TokenError> {
+    let mut ts = TokenStream { tokens: vec![] };
     let mut cursor = 0;
-    loop {
+    while cursor < source.len() {
         let c = source[cursor];
+        let start = cursor;
+        cursor += 1;
         // handle identifiers
         if is_identifier(c) {
-            let mut i = cursor + 1;
+            let mut i = cursor;
             loop {
-                let d = source[i];
-                i += 1;
                 // looking for any non digit/alpha/unicode
                 // worry about legal syntax later
-                if !is_identifier(d) {
+                if i >= source.len() || !is_identifier(source[i]) {
                     ts.tokens.push(TokenItem {
                         token: Token::Identifier,
-                        start: cursor,
+                        start,
                         // TODO double check math
-                        length: i - cursor,
+                        len: i - start,
                     });
                     cursor = i;
                     break;
                 }
+                i += 1;
             }
             continue;
         }
         // handle strings
         if c == DOUBLEQUOTE || c == SINGLEQUOTE {
-            let mut i = cursor + 1;
+            let mut i = cursor;
             let mut escape = false;
             loop {
+                if i >= source.len() {
+                    return Err(TokenError {
+                        partial_stream: ts,
+                        error_kind: TokenErrorKind::UnclosedString,
+                        loc: start
+                    });
+                }
                 let d = source[i];
                 i += 1;
                 // planned escapes include 7bit 2digit hex, 24bit 6digit hex, whitespaces n,r,t, null, backslash
@@ -166,9 +191,9 @@ fn stage1(source: &[u8]) -> TokenStream {
                             } else {
                                 Token::SingleQuoteString
                             },
-                        start: cursor,
+                        start: start,
                         // TODO double check math
-                        length: i - cursor,
+                        len: i - start,
                     });
                     cursor = i;
                     break;
@@ -178,7 +203,7 @@ fn stage1(source: &[u8]) -> TokenStream {
         }
         // handle comments
         if c == SLASH {
-            let mut i = cursor + 1;
+            let mut i = cursor;
             let c2 = source[i];
             if c2 == SLASH {
                 // line comment
@@ -186,12 +211,20 @@ fn stage1(source: &[u8]) -> TokenStream {
             } else if c2 == ASTERISK {
                 // block comment
                 loop {
+                    if i + 1 >= source.len() {
+                        return Err(TokenError {
+                            partial_stream: ts,
+                            error_kind: TokenErrorKind::UnclosedComment,
+                            loc: start
+                        });
+                    }
                     let d = source[i];
-                    if d == ASTERISK && source[i+1] == SLASH {
+                    i += 1;
+                    if d == ASTERISK && source[i] == SLASH {
                         ts.tokens.push(TokenItem {
                             token: Token::BlockComment,
                             start: cursor,
-                            length: todo!(),
+                            len: todo!(),
                         });
                         cursor = i;
                         break;
@@ -203,7 +236,7 @@ fn stage1(source: &[u8]) -> TokenStream {
         // handle others
         let token = match c {
             x if x == LINEFEED => Token::LineFeed,
-            x if x == SPACE => Token::Space,
+            x if x == SPACE => continue,
             x if x == EXCLAIMATION => Token::Exclaimation,
             x if x == HASH => Token::Hash,
             x if x == DOLLAR => Token::Dollar,
@@ -238,15 +271,14 @@ fn stage1(source: &[u8]) -> TokenStream {
             x if x == VERTICALBAR => Token::VerticalBar,
             x if x == RIGHTCURLY => Token::RightCurly,
             x if x == TILDE => Token::Tilde,
-
+            // TODO this should be a TokenError, right?
             _ => Token::Unknown,
         };
         ts.tokens.push(TokenItem {
             token,
-            start: cursor,
-            length: todo!(),
-        })
+            start,
+            len: 1,
+        });
     }
-    ts.cursor = cursor;
-    return ts;
+    Ok(ts)
 }
