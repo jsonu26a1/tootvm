@@ -1,3 +1,13 @@
+/*
+NOTE: this module needs to be rewritten/reworked; specifically the part for handling
+Token::Identifier; we need to break that up into an actual identifier/keyword, vs a
+number literal (either integer or float), where a float might have a period. I think
+it makes sense to handle certain complicated and low-level parsing tasks in this.
+
+oh, also we should rename this new/rewitten module lexer.rs, which better represents
+what the module is accomplishing- being a lexer. it will include these token typedefs,
+and then we can move onto transforming the "token stream" into a "sytax tree".
+*/
 #[derive(Debug)]
 pub struct TokenStream {
     pub tokens: Vec<TokenItem>,
