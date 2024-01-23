@@ -1,6 +1,30 @@
 #[derive(Debug)]
 pub struct TokenStream {
     pub tokens: Vec<TokenItem>,
+    pub line_offsets: Vec<usize>,
+}
+
+impl TokenStream {
+    pub fn new() -> Self {
+        TokenStream {
+            tokens: vec![],
+            line_offsets: vec![],
+        }
+    }
+
+    pub fn offset_to_line_col(&self, offset: usize) -> (usize, usize) {
+        let mut line_start = 0;
+        let mut line_num = 1;
+        for i in self.line_offsets.iter().copied() {
+            if i >= offset {
+                break;
+            }
+            line_num += 1;
+            line_start = i + 1;
+        };
+        let col = offset - line_start + 1;
+        (line_num, col)
+    }
 }
 
 #[derive(Debug)]
@@ -131,7 +155,7 @@ fn is_identifier(c: u8) -> bool {
 
 // TODO bounds checks
 pub fn parse(source: &[u8]) -> Result<TokenStream, TokenError> {
-    let mut ts = TokenStream { tokens: vec![] };
+    let mut ts = TokenStream::new();
     let mut cursor = 0;
     while cursor < source.len() {
         let c = source[cursor];
@@ -201,7 +225,18 @@ pub fn parse(source: &[u8]) -> Result<TokenStream, TokenError> {
             let c2 = source[i];
             if c2 == SLASH {
                 // line comment
-                todo!();
+                loop {
+                    if i > source.len() || source[i] == LINEFEED {
+                        ts.tokens.push(TokenItem {
+                            token: Token::LineComment
+                            start,
+                            len: i - start,
+                        });
+                        cursor = i;
+                        break;
+                    }
+                    i += 1;
+                }
             } else if c2 == ASTERISK {
                 // block comment
                 loop {
@@ -217,8 +252,8 @@ pub fn parse(source: &[u8]) -> Result<TokenStream, TokenError> {
                     if d == ASTERISK && source[i] == SLASH {
                         ts.tokens.push(TokenItem {
                             token: Token::BlockComment,
-                            start: cursor,
-                            len: todo!(),
+                            start,
+                            len: i - start,
                         });
                         cursor = i;
                         break;
@@ -229,7 +264,10 @@ pub fn parse(source: &[u8]) -> Result<TokenStream, TokenError> {
         }
         // handle others
         let token = match c {
-            x if x == LINEFEED => Token::LineFeed,
+            x if x == LINEFEED => {
+                ts.line_offsets.push(start);
+                Token::LineFeed
+            },
             x if x == SPACE => continue,
             x if x == EXCLAIMATION => Token::Exclaimation,
             x if x == HASH => Token::Hash,
@@ -265,8 +303,14 @@ pub fn parse(source: &[u8]) -> Result<TokenStream, TokenError> {
             x if x == VERTICALBAR => Token::VerticalBar,
             x if x == RIGHTCURLY => Token::RightCurly,
             x if x == TILDE => Token::Tilde,
-            // TODO this should be a TokenError, right?
-            _ => Token::Unknown,
+
+            x => {
+                return Err(TokenError {
+                    partial_stream: ts,
+                    error_kind: TokenErrorKind::UnknownToken(x),
+                    loc: start
+                });
+            },
         };
         ts.tokens.push(TokenItem {
             token,
