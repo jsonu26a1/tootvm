@@ -1,0 +1,10 @@
+[package]
+name = "peanut-script-compiler"
+version = "0.1.0"
+authors = ["doug"]
+edition = "2018"
+
+[dependencies]
+peanut-script-vm = { path = "../vm" }
+# pest = "2.1"
+# pest_derive = "2.1"
